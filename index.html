@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pomodoro Timer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Reset & Base ──────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --work-hue:   8;
+      --break-hue:  160;
+      --long-hue:   220;
+
+      --bg:         #0e0e10;
+      --surface:    #17171a;
+      --surface2:   #1f1f24;
+      --border:     #2a2a32;
+      --text:       #f0ede8;
+      --muted:      #7a7880;
+      --subtle:     #3d3d48;
+
+      --accent:     hsl(var(--work-hue), 90%, 60%);
+      --accent-dim: hsla(var(--work-hue), 90%, 60%, .12);
+      --accent-glow:hsla(var(--work-hue), 90%, 60%, .25);
+
+      --ring-size:  260px;
+      --ring-stroke:10;
+
+      transition: --accent .6s;
+    }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow-x: hidden;
+    }
+
+    /* ── Noise grain overlay ────────────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      opacity: .035;
+      pointer-events: none;
+      z-index: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-size: 160px;
+    }
+
+    /* Ambient glow blob */
+    body::after {
+      content: '';
+      position: fixed;
+      width: 600px;
+      height: 600px;
+      border-radius: 50%;
+      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -55%);
+      pointer-events: none;
+      z-index: 0;
+      transition: background 1s ease;
+    }
+
+    .app {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 480px;
+      padding: 32px 24px 60px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────────── */
+    header {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 40px;
+    }
+    .logo {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .logo-mark {
+      font-family: 'DM Serif Display', serif;
+      font-size: 22px;
+      color: var(--text);
+      letter-spacing: -.5px;
+    }
+    .logo-mark em {
+      font-style: italic;
+      color: var(--accent);
+      transition: color .6s;
+    }
+    .logo-sub {
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* Settings button */
+    .btn-icon {
+      width: 38px;
+      height: 38px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--muted);
+      transition: background .15s, color .15s, border-color .15s;
+      flex-shrink: 0;
+    }
+    .btn-icon:hover { background: var(--surface2); color: var(--text); border-color: var(--subtle); }
+    .btn-icon svg { width: 16px; height: 16px; }
+
+    /* ── Mode tabs ──────────────────────────────────────────────────────── */
+    .mode-tabs {
+      display: flex;
+      gap: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 4px;
+      margin-bottom: 48px;
+    }
+    .mode-tab {
+      padding: 7px 16px;
+      border-radius: 8px;
+      border: none;
+      background: none;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--muted);
+      cursor: pointer;
+      transition: background .2s, color .2s;
+      white-space: nowrap;
+    }
+    .mode-tab:hover { color: var(--text); }
+    .mode-tab.active {
+      background: var(--accent);
+      color: #0e0e10;
+      font-weight: 600;
+    }
+
+    /* ── Ring timer ─────────────────────────────────────────────────────── */
+    .ring-wrap {
+      position: relative;
+      width: var(--ring-size);
+      height: var(--ring-size);
+      margin-bottom: 44px;
+    }
+    .ring-svg {
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg);
+    }
+    .ring-bg {
+      fill: none;
+      stroke: var(--surface2);
+      stroke-width: var(--ring-stroke);
+    }
+    .ring-progress {
+      fill: none;
+      stroke: var(--accent);
+      stroke-width: var(--ring-stroke);
+      stroke-linecap: round;
+      transition: stroke-dashoffset .95s linear, stroke .6s ease;
+      filter: drop-shadow(0 0 8px var(--accent-glow));
+    }
+
+    /* centre content */
+    .ring-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    .timer-display {
+      font-family: 'DM Mono', monospace;
+      font-size: 62px;
+      font-weight: 300;
+      letter-spacing: -2px;
+      color: var(--text);
+      line-height: 1;
+    }
+    .session-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: var(--accent);
+      transition: color .6s;
+    }
+    .session-count-mini {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: 'DM Mono', monospace;
+      margin-top: 2px;
+    }
+
+    /* ── Controls ───────────────────────────────────────────────────────── */
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 40px;
+    }
+    .btn-main {
+      width: 68px;
+      height: 68px;
+      border-radius: 50%;
+      border: none;
+      background: var(--accent);
+      color: #0e0e10;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform .15s, opacity .15s, background .6s;
+      box-shadow: 0 8px 28px var(--accent-glow);
+    }
+    .btn-main:hover { transform: scale(1.06); opacity: .92; }
+    .btn-main:active { transform: scale(.96); }
+    .btn-main svg { width: 26px; height: 26px; }
+
+    .btn-secondary {
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    .btn-secondary:hover { background: var(--surface2); color: var(--text); border-color: var(--subtle); }
+    .btn-secondary svg { width: 18px; height: 18px; }
+
+    /* ── Session tracker ────────────────────────────────────────────────── */
+    .sessions-section {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+    }
+    .sessions-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .sessions-title {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .sessions-total {
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .sessions-dots {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .session-dot {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      color: var(--subtle);
+      transition: background .3s, border-color .3s;
+    }
+    .session-dot.done {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+      color: var(--accent);
+      animation: dotPop .3s cubic-bezier(.34,1.56,.64,1);
+    }
+    @keyframes dotPop {
+      from { transform: scale(.5); opacity: 0; }
+      to   { transform: scale(1); opacity: 1; }
+    }
+
+    /* ── Settings panel ─────────────────────────────────────────────────── */
+    .settings-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.7);
+      backdrop-filter: blur(6px);
+      z-index: 200;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s;
+    }
+    .settings-overlay.open {
+      opacity: 1;
+      pointer-events: all;
+    }
+    .settings-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px 20px 0 0;
+      padding: 28px 24px 40px;
+      width: 100%;
+      max-width: 480px;
+      transform: translateY(100%);
+      transition: transform .3s cubic-bezier(.32,.72,0,1);
+    }
+    .settings-overlay.open .settings-panel {
+      transform: translateY(0);
+    }
+    .settings-drag {
+      width: 40px; height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      margin: 0 auto 24px;
+    }
+    .settings-title {
+      font-family: 'DM Serif Display', serif;
+      font-size: 22px;
+      margin-bottom: 24px;
+      color: var(--text);
+    }
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .setting-row:last-of-type { border-bottom: none; }
+    .setting-label {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .setting-sublabel {
+      font-size: 11.5px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .setting-stepper {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .stepper-btn {
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 18px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .12s;
+      line-height: 1;
+    }
+    .stepper-btn:hover { background: var(--border); }
+    .stepper-val {
+      font-family: 'DM Mono', monospace;
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--text);
+      width: 40px;
+      text-align: center;
+    }
+    .settings-save {
+      margin-top: 20px;
+      width: 100%;
+      padding: 14px;
+      background: var(--accent);
+      border: none;
+      border-radius: 12px;
+      color: #0e0e10;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity .15s, background .6s;
+    }
+    .settings-save:hover { opacity: .88; }
+
+    /* ── Notification toast ─────────────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-80px);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 20px;
+      font-size: 13.5px;
+      font-weight: 500;
+      color: var(--text);
+      z-index: 300;
+      white-space: nowrap;
+      transition: transform .35s cubic-bezier(.32,.72,0,1);
+      box-shadow: 0 8px 32px rgba(0,0,0,.4);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+    .toast-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+    }
+
+    /* ── Responsive ─────────────────────────────────────────────────────── */
+    @media (max-width: 400px) {
+      :root { --ring-size: 220px; }
+      .timer-display { font-size: 52px; }
+      .app { padding: 24px 16px 48px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Toast notification -->
+<div class="toast" id="toast" role="status" aria-live="polite">
+  <span class="toast-dot"></span>
+  <span id="toast-msg">Session complete!</span>
+</div>
+
+<div class="app">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <span class="logo-mark">po<em>mo</em>.</span>
+      <span class="logo-sub">Focus Timer</span>
+    </div>
+    <button class="btn-icon" id="btn-settings" aria-label="Open settings" title="Settings">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+        <circle cx="10" cy="10" r="2.5"/>
+        <path d="M10 2v1.5M10 16.5V18M2 10h1.5M16.5 10H18M4.1 4.1l1.1 1.1M14.8 14.8l1.1 1.1M15.9 4.1l-1.1 1.1M5.2 14.8l-1.1 1.1"/>
+      </svg>
+    </button>
+  </header>
+
+  <!-- Mode tabs -->
+  <div class="mode-tabs" role="tablist" aria-label="Timer mode">
+    <button class="mode-tab active" data-mode="work"       role="tab" aria-selected="true">Focus</button>
+    <button class="mode-tab"        data-mode="short_break" role="tab" aria-selected="false">Short Break</button>
+    <button class="mode-tab"        data-mode="long_break"  role="tab" aria-selected="false">Long Break</button>
+  </div>
+
+  <!-- Ring timer -->
+  <div class="ring-wrap" role="timer" aria-label="Timer">
+    <svg class="ring-svg" viewBox="0 0 260 260" aria-hidden="true">
+      <circle class="ring-bg" cx="130" cy="130" r="118"/>
+      <circle class="ring-progress" id="ring-progress" cx="130" cy="130" r="118"
+        stroke-dasharray="741.4" stroke-dashoffset="0"/>
+    </svg>
+    <div class="ring-center">
+      <div class="timer-display" id="timer-display" aria-live="off">25:00</div>
+      <div class="session-label"  id="session-label">FOCUS</div>
+      <div class="session-count-mini" id="session-count-mini">Session 1</div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <!-- Reset -->
+    <button class="btn-secondary" id="btn-reset" aria-label="Reset timer">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3.5 10A6.5 6.5 0 1 1 5 5.5"/>
+        <polyline points="3.5,3 3.5,6.5 7,6.5"/>
+      </svg>
+    </button>
+
+    <!-- Play / Pause -->
+    <button class="btn-main" id="btn-play" aria-label="Start timer">
+      <!-- Play icon -->
+      <svg id="icon-play" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M8 5.14v14l11-7-11-7z"/>
+      </svg>
+      <!-- Pause icon -->
+      <svg id="icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display:none">
+        <rect x="6" y="4" width="4" height="16" rx="1"/>
+        <rect x="14" y="4" width="4" height="16" rx="1"/>
+      </svg>
+    </button>
+
+    <!-- Skip -->
+    <button class="btn-secondary" id="btn-skip" aria-label="Skip to next session">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="5,4 14,10 5,16"/>
+        <line x1="15" y1="4" x2="15" y2="16"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Session tracker -->
+  <div class="sessions-section" aria-label="Completed sessions">
+    <div class="sessions-header">
+      <span class="sessions-title">Sessions</span>
+      <span class="sessions-total" id="sessions-total">0 completed</span>
+    </div>
+    <div class="sessions-dots" id="sessions-dots" aria-label="Session progress indicators">
+      <!-- rendered by JS -->
+    </div>
+  </div>
+
+</div>
+
+<!-- Settings panel -->
+<div class="settings-overlay" id="settings-overlay" role="dialog" aria-modal="true" aria-label="Timer settings">
+  <div class="settings-panel">
+    <div class="settings-drag" aria-hidden="true"></div>
+    <h2 class="settings-title">Settings</h2>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Focus Duration</div>
+        <div class="setting-sublabel">Work session length</div>
+      </div>
+      <div class="setting-stepper">
+        <button class="stepper-btn" data-field="work" data-dir="-1" aria-label="Decrease focus duration">−</button>
+        <span class="stepper-val" id="set-work">25</span>
+        <button class="stepper-btn" data-field="work" data-dir="1" aria-label="Increase focus duration">+</button>
+      </div>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Short Break</div>
+        <div class="setting-sublabel">Rest between sessions</div>
+      </div>
+      <div class="setting-stepper">
+        <button class="stepper-btn" data-field="short_break" data-dir="-1" aria-label="Decrease short break">−</button>
+        <span class="stepper-val" id="set-short_break">5</span>
+        <button class="stepper-btn" data-field="short_break" data-dir="1" aria-label="Increase short break">+</button>
+      </div>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Long Break</div>
+        <div class="setting-sublabel">After every 4 sessions</div>
+      </div>
+      <div class="setting-stepper">
+        <button class="stepper-btn" data-field="long_break" data-dir="-1" aria-label="Decrease long break">−</button>
+        <span class="stepper-val" id="set-long_break">15</span>
+        <button class="stepper-btn" data-field="long_break" data-dir="1" aria-label="Increase long break">+</button>
+      </div>
+    </div>
+
+    <button class="settings-save" id="btn-save-settings">Save & Apply</button>
+  </div>
+</div>
+
+<script>
+// ── Audio (Web Audio API beep) ──────────────────────────────────────────────
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const notes = [880, 1046.5, 1318.5];
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = freq;
+      osc.type = 'sine';
+      const t = ctx.currentTime + i * 0.18;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.28, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+      osc.start(t); osc.stop(t + 0.36);
+    });
+  } catch(e) {}
+}
+
+// ── State ───────────────────────────────────────────────────────────────────
+const CONFIG = {
+  work:        25,
+  short_break:  5,
+  long_break:  15,
+  sessions_before_long: 4
+};
+
+let config       = { ...CONFIG };
+let pendingConfig= { ...CONFIG };
+
+let mode         = 'work';       // 'work' | 'short_break' | 'long_break'
+let timeLeft     = config.work * 60;
+let totalTime    = config.work * 60;
+let running      = false;
+let intervalId   = null;
+let workSessions = 0;            // completed work sessions
+
+// ── CSS var helpers ─────────────────────────────────────────────────────────
+const HUE = { work: 8, short_break: 160, long_break: 220 };
+function applyTheme(m) {
+  document.documentElement.style.setProperty('--work-hue', HUE[m]);
+  document.documentElement.style.setProperty('--accent',     `hsl(${HUE[m]}, 90%, 60%)`);
+  document.documentElement.style.setProperty('--accent-dim', `hsla(${HUE[m]}, 90%, 60%, .12)`);
+  document.documentElement.style.setProperty('--accent-glow',`hsla(${HUE[m]}, 90%, 60%, .25)`);
+  // also update btn-main box-shadow live
+  document.querySelector('.btn-main').style.boxShadow =
+    `0 8px 28px hsla(${HUE[m]}, 90%, 60%, .35)`;
+}
+
+// ── DOM refs ────────────────────────────────────────────────────────────────
+const timerDisplay   = document.getElementById('timer-display');
+const sessionLabel   = document.getElementById('session-label');
+const sessionMini    = document.getElementById('session-count-mini');
+const ringProgress   = document.getElementById('ring-progress');
+const iconPlay       = document.getElementById('icon-play');
+const iconPause      = document.getElementById('icon-pause');
+const sessionsTotal  = document.getElementById('sessions-total');
+const sessionsDots   = document.getElementById('sessions-dots');
+const btnPlay        = document.getElementById('btn-play');
+
+const CIRCUMFERENCE  = 2 * Math.PI * 118; // ~741.4
+
+// ── Format time ─────────────────────────────────────────────────────────────
+function fmt(s) {
+  const m = Math.floor(s / 60).toString().padStart(2,'0');
+  const sec = (s % 60).toString().padStart(2,'0');
+  return `${m}:${sec}`;
+}
+
+// ── Render ───────────────────────────────────────────────────────────────────
+function render() {
+  timerDisplay.textContent = fmt(timeLeft);
+  document.title = `${fmt(timeLeft)} · ${LABELS[mode]}`;
+
+  // ring
+  const pct    = timeLeft / totalTime;
+  const offset = CIRCUMFERENCE * (1 - pct);
+  ringProgress.style.strokeDashoffset = offset;
+
+  // session meta
+  const LABELS = { work: 'FOCUS', short_break: 'SHORT BREAK', long_break: 'LONG BREAK' };
+  sessionLabel.textContent = LABELS[mode];
+  sessionMini.textContent  = `Session ${workSessions + 1}`;
+
+  // play/pause icons
+  iconPlay.style.display  = running ? 'none'  : 'block';
+  iconPause.style.display = running ? 'block' : 'none';
+  btnPlay.setAttribute('aria-label', running ? 'Pause timer' : 'Start timer');
+
+  // dots
+  renderDots();
+  sessionsTotal.textContent = `${workSessions} completed`;
+}
+
+const LABELS = { work: 'FOCUS', short_break: 'SHORT BREAK', long_break: 'LONG BREAK' };
+
+function renderDots() {
+  // show next 8 upcoming + completed
+  const total = Math.max(workSessions + 4, 8);
+  sessionsDots.innerHTML = '';
+  for (let i = 0; i < total; i++) {
+    const d = document.createElement('div');
+    d.className = 'session-dot' + (i < workSessions ? ' done' : '');
+    d.setAttribute('aria-label', i < workSessions ? `Session ${i+1} complete` : `Session ${i+1}`);
+    d.textContent = i < workSessions ? '✓' : i + 1;
+    sessionsDots.appendChild(d);
+  }
+}
+
+// ── Timer tick ───────────────────────────────────────────────────────────────
+function tick() {
+  timeLeft--;
+  if (timeLeft <= 0) {
+    timeLeft = 0;
+    render();
+    onSessionEnd();
+    return;
+  }
+  render();
+}
+
+function onSessionEnd() {
+  clearInterval(intervalId);
+  running = false;
+  playBeep();
+
+  if (mode === 'work') {
+    workSessions++;
+    const isLong = workSessions % config.sessions_before_long === 0;
+    showToast(isLong ? '🎉 Long break time!' : '☕ Short break time!');
+    switchMode(isLong ? 'long_break' : 'short_break');
+  } else {
+    showToast('💪 Ready to focus!');
+    switchMode('work');
+  }
+}
+
+// ── Switch mode ──────────────────────────────────────────────────────────────
+function switchMode(m, manual = false) {
+  mode      = m;
+  running   = false;
+  clearInterval(intervalId);
+
+  const mins = m === 'work' ? config.work
+             : m === 'short_break' ? config.short_break
+             : config.long_break;
+  timeLeft  = mins * 60;
+  totalTime = mins * 60;
+
+  applyTheme(m);
+
+  // update tabs
+  document.querySelectorAll('.mode-tab').forEach(t => {
+    const active = t.dataset.mode === m;
+    t.classList.toggle('active', active);
+    t.setAttribute('aria-selected', active);
+  });
+
+  render();
+}
+
+// ── Controls ─────────────────────────────────────────────────────────────────
+btnPlay.addEventListener('click', () => {
+  if (running) {
+    clearInterval(intervalId);
+    running = false;
+  } else {
+    intervalId = setInterval(tick, 1000);
+    running = true;
+  }
+  render();
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  clearInterval(intervalId);
+  running = false;
+  switchMode(mode);
+  render();
+});
+
+document.getElementById('btn-skip').addEventListener('click', () => {
+  clearInterval(intervalId);
+  if (mode === 'work') {
+    workSessions++;
+    const isLong = workSessions % config.sessions_before_long === 0;
+    switchMode(isLong ? 'long_break' : 'short_break');
+  } else {
+    switchMode('work');
+  }
+});
+
+document.querySelectorAll('.mode-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    clearInterval(intervalId);
+    running = false;
+    switchMode(tab.dataset.mode, true);
+  });
+});
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+const overlay = document.getElementById('settings-overlay');
+
+document.getElementById('btn-settings').addEventListener('click', () => {
+  // sync pending config to UI
+  pendingConfig = { ...config };
+  ['work','short_break','long_break'].forEach(f => {
+    document.getElementById(`set-${f}`).textContent = pendingConfig[f];
+  });
+  overlay.classList.add('open');
+});
+
+overlay.addEventListener('click', e => {
+  if (e.target === overlay) overlay.classList.remove('open');
+});
+
+document.querySelectorAll('.stepper-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const field = btn.dataset.field;
+    const dir   = parseInt(btn.dataset.dir);
+    const min   = field === 'work' ? 1 : 1;
+    const max   = field === 'work' ? 90 : 60;
+    pendingConfig[field] = Math.min(max, Math.max(min, pendingConfig[field] + dir));
+    document.getElementById(`set-${field}`).textContent = pendingConfig[field];
+  });
+});
+
+document.getElementById('btn-save-settings').addEventListener('click', () => {
+  config = { ...pendingConfig, sessions_before_long: 4 };
+  overlay.classList.remove('open');
+  clearInterval(intervalId);
+  running = false;
+  switchMode(mode);
+  showToast('✓ Settings saved');
+});
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+let toastTimeout;
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  document.getElementById('toast-msg').textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => toast.classList.remove('show'), 3200);
+}
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+  if (e.code === 'Space') { e.preventDefault(); btnPlay.click(); }
+  if (e.code === 'KeyR')  document.getElementById('btn-reset').click();
+  if (e.code === 'KeyS')  document.getElementById('btn-skip').click();
+});
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+applyTheme('work');
+render();
+</script>
+</body>
+</html>
